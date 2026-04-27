@@ -133,9 +133,8 @@ contains
   end subroutine read_sac_parameters
 
   ! ==== Open forcings files and read to start of first record
-  SUBROUTINE init_forcing_files(namelist, runinfo, parameters)
+  SUBROUTINE init_forcing_files(runinfo, parameters)
     implicit none
-    type (namelist_type),    intent(in)   :: namelist
     type (runinfo_type),     intent(in)   :: runinfo
     type (parameters_type),  intent(in)   :: parameters
     
@@ -157,7 +156,8 @@ contains
     
 
       ! make filename to read
-      filename = trim(namelist%forcing_root) // trim(parameters%hru_id(nh)) // ".csv"
+      filename = trim(runinfo%forcing_root) // trim(parameters%hru_id(nh)) // ".csv"
+      print*, 'jbb, forcing file for ',nh, 'is ',filename
 
       !  Check if the specified file exists
       inquire(file = trim(filename), exist = lexist)
@@ -176,6 +176,8 @@ contains
       endif
       
       ! Skip 1-line header
+      print*, 'jbb, reading file on unit ',runinfo%forcing_fileunits(nh)
+      print*, 'jbb, yy, mm, dd, hh = ',runinfo%start_year,runinfo%start_month,runinfo%start_day,runinfo%start_hour
       read(runinfo%forcing_fileunits(nh), *)
       
       ! advance to first record needed in simulation 
@@ -183,6 +185,7 @@ contains
       do while(ios .ge. 0)
         ! forcing could have any format (not fixed width)
         read (UNIT=runinfo%forcing_fileunits(nh), FMT=*, IOSTAT=ierr) yr, mnth, dy, hr, pcp, tav, pet
+      print*, 'jbb, read rec yy, mm, dd, hh = ',yr,mnth,dy,hr
 
         if(yr .eq. runinfo%start_year .and. mnth .eq. runinfo%start_month .and. dy .eq. runinfo%start_day .and. hr .eq. runinfo%start_hour) then
           found_start = found_start + 1
@@ -205,6 +208,7 @@ contains
     if (found_start /= runinfo%n_hrus) then
       print*, 'ERROR: found the starting date in only', found_start, ' out of', runinfo%n_hrus, ' forcing files.  Quitting.'; stop
     endif
+    print*, 'jbb, done Initializing forcing files'
 
   END SUBROUTINE init_forcing_files
   
@@ -404,10 +408,10 @@ contains
    
     ! local variables
     integer               :: hru
-    integer	              :: ios = 0
+    integer               :: ios = 0
     character(len=480)    :: state_filename
     character(len=10)     :: statefile_datehr
-    character(len=10)	  :: state_datehr         ! string to match date in input states
+    character(len=10)     :: state_datehr         ! string to match date in input states
     DOUBLE PRECISION      :: prev_datetime        ! for reading state file
     integer               :: states_found         ! counter to match hrus
     

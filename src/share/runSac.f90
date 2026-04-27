@@ -25,9 +25,10 @@ contains
 
   !== Initialize the model ================================================================================
 
-  SUBROUTINE initialize_from_file (model, config_file)
+  FUNCTION initialize_from_file (model, config_file) result (bmi_status)
     implicit none
     
+    integer                             :: bmi_status
     type(sac_type), target, intent(out) :: model
     character(len=*), intent (in)          :: config_file ! namelist file from command line argument
     
@@ -52,26 +53,7 @@ contains
       ! read parameters from input file
       call read_sac_parameters(parameters, namelist%sac_param_file, runinfo)
         
-      !---------------------------------------------------------------------
-      ! Open the forcing file
-      ! Comp. dir. NGEN_FORCING_ACTIVE indicates Nextgen forcing is used
-      !---------------------------------------------------------------------
-#ifndef NGEN_FORCING_ACTIVE
-      call init_forcing_files(namelist, runinfo, parameters)
-#endif
       
-      !---------------------------------------------------------------------
-      ! If warm start is specified, read an initial state from a restart file
-      ! Comp. dir. NGEN_READ_RESTART_ACTIVE indicates Nextgen sets the states
-      !---------------------------------------------------------------------
-#ifndef NGEN_READ_RESTART_ACTIVE
-      ! we *ARE* warm-starting from a state file
-      ! read in external state files and overwrites namelist state variables
-      if(namelist%warm_start_run .eq. 1) then
-        call read_sac_statefiles (modelvar, namelist, parameters, runinfo) 
-      endif
-#endif
-
       !---------------------------------------------------------------------
       ! Create output file and write header
       ! Compiler directive NGEN_OUTPUT_ACTIVE indicates Nextgen controls outputs
@@ -92,17 +74,50 @@ contains
 #endif
 
     end associate ! terminate the associate block
+    bmi_status = 0   ! success
 
-  END SUBROUTINE initialize_from_file                
+  END FUNCTION initialize_from_file                
               
              
              
   ! == Move the model ahead one time step ================================================================
-  SUBROUTINE advance_in_time(model)
+  FUNCTION advance_in_time(model) result (bmi_status)
+    integer                         :: bmi_status
     type (sac_type), intent (inout) :: model
+
+    if (model%runinfo%itime == 0) then   ! need to init with dates set by bmi
+      associate(namelist   => model%namelist,   &
+                runinfo    => model%runinfo,    &
+                parameters => model%parameters, &
+                modelvar   => model%modelvar)
+
+        bmi_status = init_timing(runinfo)  ! init start, end time step
+
+      !---------------------------------------------------------------------
+      ! Open the forcing file
+      ! Comp. dir. NGEN_FORCING_ACTIVE indicates Nextgen forcing is used
+      !---------------------------------------------------------------------
+#ifndef NGEN_FORCING_ACTIVE
+      call init_forcing_files(runinfo, parameters)
+#endif
+
+      !---------------------------------------------------------------------
+      ! If warm start is specified, read an initial state from a restart file
+      ! Comp. dir. NGEN_READ_RESTART_ACTIVE indicates Nextgen sets the states
+      !---------------------------------------------------------------------
+#ifndef NGEN_READ_RESTART_ACTIVE
+      ! we *ARE* warm-starting from a state file
+      ! read in external state files and overwrites namelist state variables
+      if(namelist%warm_start_run .eq. 1) then
+        call read_sac_statefiles (modelvar, namelist, parameters, runinfo) 
+      endif
+#endif
+      end associate ! terminate the associate block
+
+    endif  ! itime = 0        
     
     ! -- run sac for one time step
-    call solve_sac(model)
+    bmi_status = solve_sac(model)
     ! -- advance run time info
     model%runinfo%itime         = model%runinfo%itime + 1                            ! increment the integer time by 1
     !model%runinfo%time_dbl     = dble(model%runinfo%time_dbl + model%runinfo%dt)    ! increment relative model run time in seconds by DT
@@ -112,12 +127,13 @@ contains
                             model%runinfo%curr_yr, model%runinfo%curr_mo, model%runinfo%curr_dy, &
                             model%runinfo%curr_hr, model%runinfo%curr_min, model%runinfo%curr_sec)
     
-  END SUBROUTINE advance_in_time
+  END FUNCTION advance_in_time
   
 
   ! == Routing to run the model for one timestep and all spatial sub-units ================================
-  SUBROUTINE solve_sac(model)
+  FUNCTION solve_sac(model)  result (bmi_status)
     USE, INTRINSIC :: IEEE_ARITHMETIC
+    integer                         :: bmi_status
     type (sac_type), intent (inout) :: model
     
     LOGICAL :: IS_IT_NAN
@@ -143,6 +159,7 @@ contains
 #ifndef NGEN_FORCING_ACTIVE
       call read_areal_forcing(namelist, parameters, runinfo, forcing)
 #endif
+      bmi_status = 0  ! success
 
       !---------------------------------------------------------------------
       ! call the main sac state update routine in loop over spatial sub-units
@@ -225,7 +242,7 @@ contains
       end do  ! end of spatial sub-unit (snowband) loop
     end associate ! terminate associate block
     
-  END SUBROUTINE solve_sac
+  END FUNCTION solve_sac
   
   
   !== Finalize the model ================================================================================

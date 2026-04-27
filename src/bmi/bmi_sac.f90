@@ -179,13 +179,11 @@ contains
     integer :: bmi_status
 
     if (len(config_file) > 0) then
-       call initialize_from_file(this%model, config_file)
+       bmi_status = initialize_from_file(this%model, config_file)
+    else
+       bmi_status = BMI_FAILURE
+    end if
 
-    !else
-       !call initialize_from_defaults(this%model)
-     end if
-
-    bmi_status = BMI_SUCCESS
   end function sac_initialize
 
   ! BMI finalizer.
@@ -257,8 +255,7 @@ contains
     class (bmi_sac), intent(inout) :: this
     integer :: bmi_status
 
-    call advance_in_time(this%model)
-    bmi_status = BMI_SUCCESS
+    bmi_status = advance_in_time(this%model)
   end function sac_update
 
   ! Advance the model until the given time.
@@ -276,8 +273,9 @@ contains
        return
     end if
     ! otherwise try to advance to end time
-    do while ( time < this%model%runinfo%end_datetime )
-       s = this%update()
+    do while ( time > this%model%runinfo%curr_datetime )
+       bmi_status = this%update()
+       if ( bmi_status /= 0) exit
     end do
 
     ! original code working with time run convention from 0 to n*dt end_time
@@ -293,7 +291,6 @@ contains
     !end do
     !     call update_frac(this, n_steps_real - dble(n_steps)) ! NOT IMPLEMENTED
     
-    bmi_status = BMI_SUCCESS
   end function sac_update_until
 
   ! Get the grid id for a particular variable.
@@ -1106,7 +1103,33 @@ contains
 
     !==================== UPDATE IMPLEMENTATION IF NECESSARY FOR DOUBLE VARS =================
 
+    associate(runInfo => this%model%runInfo)
     select case(name)
+    ! timing values
+    case("START_TIME")
+      if(runInfo%itime == 0) then  ! simulation has not started yet
+        runInfo%start_datetime = src(1)
+        bmi_status = BMI_SUCCESS
+      else
+        print*,"Cannot change START_TIME after simulation has begun"
+        bmi_status = BMI_FAILURE
+      endif
+    case("END_TIME")
+      if(runInfo%itime == 0) then  ! simulation has not started yet
+        runInfo%end_datetime = src(1)
+        bmi_status = BMI_SUCCESS
+      else
+        print*,"Cannot change END_TIME after simulation has begun"
+        bmi_status = BMI_FAILURE
+      endif
+    case("TIME_STEP")
+      if(runInfo%itime == 0) then  ! simulation has not started yet
+        runInfo%DT = src(1)
+        bmi_status = BMI_SUCCESS
+      else
+        print*,"Cannot change TIME_STEP after simulation has begun"
+        bmi_status = BMI_FAILURE
+      endif
     case("precip")
        this%model%forcing%precip(1) = src(1)
 !       this%model%derived%precip_comb = src(1)
@@ -1206,6 +1229,7 @@ contains
     case default
        bmi_status = BMI_FAILURE
     end select
+    end associate
   end function sac_set_double
 
    ! Set integer values at particular locations.
